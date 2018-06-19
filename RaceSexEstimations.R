@@ -44,7 +44,7 @@
 	# https://developers.google.com/maps/documentation/javascript/get-api-key#step-1-get-an-api-key-from-the-google-cloud-platform-console
 
 	# Register your API
-	register_google(key = "your Google API Code")
+	register_google(key = "your Google API key here")
 	ggmap_credentials()
 
 	# Geocode
@@ -104,7 +104,7 @@
 			st_set_geometry(NULL) %>%
 			predict_race(.,
 						 census.geo = "tract",
-						 census.key = "Your census api here") %>%
+						 census.key = "Your census api key here") %>%
 			arrange(id) %>%
 			rename(white = pred.whi, # for easier interpretation
 				   black = pred.bla,
