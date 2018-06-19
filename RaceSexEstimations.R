@@ -1,5 +1,5 @@
 # ==========================================================================
-# Code for estimating sex and race if individuals
+# Code for estimating sex and race for individuals
 # Tim Thomas
 # t77@uw.edu
 # ==========================================================================
