@@ -9,12 +9,11 @@
 # ==========================================================================
 
 	install.packages(libs <- c("devtools",
-							   "gender",
-							   "wru",
-							   # "data.table",
-					   		   "tigris",
-					   		   "sf",
-					   		   "tidyverse"), dependencies = TRUE)
+								"gender",
+								"wru",
+								"tigris",
+								"sf",
+								"tidyverse"), dependencies = TRUE)
 	devtools::install_github("dkahle/ggmap")
 	library(gender) # for estimating sex
 	library(wru) # for estimating race
@@ -31,7 +30,12 @@
 	firstname <- c("John","Nia","Lupe","Conner","Jamal")
 	surname <- c("Smith","Carter","Rodriguez","Miller","Williams")
 	age <- c(30, 30, 30, 30, 30) # if you don't have age, use 30
-	address <- c("2001 NW Market St, Seattle, WA, 98107","6306 30th Ave SW, Seattle, WA, 98126","400 23rd Ave Se, Seattle, WA, 98122","1410 NE 66th St, Seattle, WA, 98115","5997 Rainier Ave S, Seattle, WA, 98118")
+	address <- c("2001 NW Market St,
+				Seattle, WA, 98107",
+				"6306 30th Ave SW, Seattle, WA, 98126",
+				"400 23rd Ave Se, Seattle, WA, 98122",
+				"1410 NE 66th St, Seattle, WA, 98115",
+				"5997 Rainier Ave S, Seattle, WA, 98118")
 	df <- data.frame(firstname,surname,age, address, stringsAsFactors = FALSE)
 	df$id <- rownames(df)
 
@@ -50,7 +54,7 @@
 
 	# Geocode
 	geo <- geocode(df$address, output = "more") %>%
-		   select(lon, lat, loctype)
+			select(lon, lat, loctype)
 
 		# Pay attention to the loctype, "approximation" is very
 		# braod and not a good geocode.
@@ -58,12 +62,12 @@
 
 	# Combine names and locations
 	df_geo <- cbind(df,geo) %>%
-			  st_as_sf(coords = c("lon", "lat")) %>%
-			  st_set_crs(4326) %>%
-			  st_transform(4269) %>%
-			  st_join(., tracts(state = "WA", # get tract fips for each point
-			  			 year = 2010) %>%
-			  			 st_as_sf())
+				st_as_sf(coords = c("lon", "lat")) %>%
+				st_set_crs(4326) %>%
+				st_transform(4269) %>%
+				st_join(., tracts(state = "WA", # get tract fips for each point
+							year = 2010) %>%
+							st_as_sf())
 
 # ==========================================================================
 # Estimate Sex of Names
@@ -71,8 +75,8 @@
 
 	# Estimate names
 	sex <- gender(unique(df_geo$firstname),
-				  method = "ssa",
-				  countries = "United States") %>%
+					method = "ssa",
+					countries = "United States") %>%
 		   data.frame() %>%
 		   distinct()
 
@@ -98,23 +102,24 @@
 
 	race <- df_geo_sex %>%
 			select(id,
-				   surname,
-				   county = COUNTYFP10,
-				   tract = TRACTCE10) %>%
+					surname,
+					county = COUNTYFP10,
+					tract = TRACTCE10) %>%
 			mutate(state = "WA") %>%
 			st_set_geometry(NULL) %>%
 			predict_race(.,
-						 census.geo = "tract",
-						 census.key = "Your census api here") %>%
+							census.geo = "tract",
+							census.key = "Your census api here") %>%
 			arrange(id) %>%
 			rename(white = pred.whi, # for easier interpretation
-				   black = pred.bla,
-				   latinx = pred.his,
-				   asian = pred.asi,
-				   other = pred.oth) %>%
+					black = pred.bla,
+					latinx = pred.his,
+					asian = pred.asi,
+					other = pred.oth) %>%
 			mutate(race = colnames(.[,6:10])[max.col(.[,6:10],
-										ties.method="first")])
+											ties.method="first")])
 
-	df_geo_sex_race <- left_join(df_geo_sex, race %>% select(id, surname, race))
+	df_geo_sex_race <- left_join(df_geo_sex, race %>%
+						select(id, surname, race))
 
 
