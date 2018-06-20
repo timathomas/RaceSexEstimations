@@ -52,7 +52,7 @@
 		   select(lon, lat, loctype)
 
 		# Pay attention to the loctype, "approximation" is very
-		# braod and not a good geocode.
+		# broad and not a good geocode.
 		# read: http://www.nickeubank.com/wp-content/uploads/2015/10/RGIS4_geocoding.html#loctype
 
 	# Combine names and locations
