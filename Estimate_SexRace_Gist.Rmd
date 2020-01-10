@@ -1,0 +1,293 @@
+---
+
+title: Race & Sex Estimates in R
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_notebook
+---
+
+This gist demonstrates how to estimate the race and sex of identified individuals using their name and location. 
+
+## Loading packages
+
+When installing packages, I've really been enjoying the `pacman` package lately. The `p_load` function will load your packages and install them if they are not already. 
+
+```{r}
+
+if(!require(pacman)) install.packages("pacman")
+pacman::p_load(
+			   randomNames, # random name generator for the last example
+			   readr, # for reading my hidden api keys stored on my machine
+			   ggmap, # geocoding using Google's API
+			   gender, # estimate sex using first names
+			   wru, # estimate rate using location and surname
+			   tigris, # pull just census shapefiles
+			   sf, # spatial simple features - a better use than shapefiles
+			   leaflet, # other mapping features
+			   tmap, # interactive mapping
+			   tidycensus, # pulling various census data and shapefiles
+			   tidyverse # various packages using tidyverse
+			)
+```
+
+The old-school method, which doesn't install the packages for you, is: 
+
+```{r}
+library(randomNames) 
+library(readr)  
+library(ggmap) 
+library(gender) 
+library(wru) 
+library(tigris) 
+library(sf) 
+library(tidyverse)
+```
+
+To avoid getting a bunch of API keys for Google maps and the census, just load this file
+
+```{r} 
+load("~/git/git_tutorials/race_sex_estimates/tutorial_data.RData")
+```
+## Example 1: Simple estimations
+
+### Create a simple dataset
+
+To get a brief look under the hood of the race and sex estimates, we're going to start with a simple dataset that I created for the Oakland, CA area. These are names I made up with random, real addresses I selected using google maps. 
+
+```{r}
+	firstname <- c("John","Nia","Lupe","Conner","Jamal")
+	surname <- c("Smith","Carter","Rodriguez","Miller","Williams")
+	age <- c(30, 30, 30, 30, 30) # if you don't have age, use 30
+	address <- c("407 Perkins St, Oakland, CA 94610","1531 E 15th St, Oakland, CA 94606","752 Alcatraz Ave, Oakland, CA 94609","1198 12th St, Oakland, CA 94607","630 Foothill Blvd, Oakland, CA 94606")
+	df <- data.frame(firstname,surname,age, address, stringsAsFactors = FALSE)
+	df$id <- rownames(df)
+```
+
+This is how your dataframe should look when you're preparing it for estimation. 
+
+```{r}
+	df
+```
+### Geocode our data
+
+```{r}
+	# Beginning June 11, 2018, Google requires an API key. Go here to register for an API key (requires credit card but your trial should cover most geocodes)
+	# https://developers.google.com/maps/documentation/javascript/get-api-key#step-1-get-an-api-key-from-the-google-cloud-platform-console
+
+	# Register your API
+	register_google(key = read_file("~/.ssh/googleapikey.txt")) # use your own google api here
+	getOption("ggmap")
+
+	# Geocode
+	geo <- geocode(df$address, output = "more")
+
+	geo
+
+		# Pay attention to the loctype, "approximation" is very
+		# braod and not a good geocode.
+		# read: http://www.nickeubank.com/wp-content/uploads/2015/10/RGIS4_geocoding.html#loctype
+
+	alameda_tracts <- 
+		tracts(state = "CA", # get tract fips for each point
+			   county = "Alameda", 
+			   year = 2017, 
+			   class = "sf", 
+			   cb = TRUE) 
+
+	# Combine names and locations
+	df_geo <- cbind(df,geo) %>% 
+			  st_as_sf(coords = c("lon", "lat")) %>%
+			  st_set_crs(4326) %>%
+			  st_transform(4269) %>%
+			  st_join(., alameda_tracts)
+
+```
+
+### Estimate sex
+
+```{r}
+	# Estimate names
+	sex <- gender(unique(df_geo$firstname),
+				  method = "ssa",
+				  countries = "United States") %>%
+		   data.frame() %>%
+		   distinct()
+
+	# Join sex probabilities to
+	df_geo_sex <- left_join(df_geo,
+							sex,
+							by = c("firstname" = "name"))
+
+	# see which names were unidentifiable
+	df_geo_sex %>%
+	filter(is.na(gender)) %>%
+	data.frame()
+		# Up to you to decide what you do with these. One method I used was to
+		# search facebook for these names and take the first 10 profiles I found
+		# and averaged the gender based on these 10
+```
+
+### Estimate race
+
+```{r}
+		# You'll need a US Census API. Go here to sign up for one
+		# https://api.census.gov/data/key_signup.html
+
+	tract.data <-
+		get_census_data(key = read_csv("~/.ssh/censusapi.csv")$key,
+						"CA",
+      					census.geo = "tract")
+
+	race <- df_geo_sex %>%
+			select(id,
+				   surname,
+				   county = COUNTYFP,
+				   tract = TRACTCE) %>%
+			mutate(state = "CA") %>%
+			st_set_geometry(NULL) %>%
+			predict_race(.,
+				 		census.geo = "tract",
+				 		census.data = tract.data) %>% 
+			arrange(id) %>%
+			rename(white = pred.whi, # for easier interpretation
+				   black = pred.bla,
+				   latinx = pred.his,
+				   asian = pred.asi,
+				   other = pred.oth) %>%
+			mutate(race = colnames(.[,6:10])[max.col(.[,6:10],
+										ties.method="first")])
+
+	df_geo_sex_race <- left_join(df_geo_sex, race %>% select(id, surname, race))
+```
+
+### Map these individuals
+
+```{r}
+tmap_mode("view")
+
+tm_basemap(leaflet::providers$CartoDB.Positron) + 
+	# For other basemaps see: http://leaflet-extras.github.io/leaflet-providers/preview/
+	tm_shape(df_geo_sex_race, name = "Estimated Race") +
+	tm_symbols(shape = "race", 
+			   col = "race",
+			   popup.vars = c("First Name" = "firstname",
+			   				  "Last Name" = "surname", 
+			   				  "Sex" = "gender", 
+			   				  "Race" = "race"))
+```
+
+## Example 2: Larger estimates
+
+```{r}
+r_names <- randomNames(10000)
+
+TRACTCE <- sample(alameda_tracts$TRACTCE, 
+					size = 10000, 
+					replace = TRUE)	
+
+big_df <- 
+	data.frame(r_names, TRACTCE) %>%
+	separate(r_names, c("surname", "firstname"), 
+			 sep = ", ") %>% 
+	mutate(STATEFP = "06", 
+		   COUNTYFP = "001", 
+		   id = rownames(.))
+
+big_sex <- 
+	gender(unique(big_df$firstname),
+				  method = "ssa",
+				  countries = "United States") %>%
+	data.frame() %>%
+	distinct()
+
+big_sex_df <- 
+	left_join(big_df,
+				big_sex,
+				by = c("firstname" = "name"))
+	
+	big_sex_df %>% 
+	filter(is.na(gender)) %>%
+	glimpse()
+
+big_race <- big_sex_df %>% 
+			select(id,
+				   surname,
+				   county = COUNTYFP,
+				   tract = TRACTCE) %>% 
+			mutate(state = "CA") %>% 
+			predict_race(.,
+				 		census.geo = "tract",
+				 		census.data = tract.data) %>% 
+			arrange(id) %>% 
+			rename(white = pred.whi, # for easier interpretation
+				   black = pred.bla,
+				   latinx = pred.his,
+				   asian = pred.asi,
+				   other = pred.oth) %>% 
+			mutate(race = colnames(.[,6:10])[max.col(.[,6:10],
+										ties.method="first")])
+
+big_sex_race <- left_join(big_sex_df, big_race %>% select(id, surname, white:race))
+
+ind <- 
+    big_sex_race %>% 
+    group_by(STATEFP, COUNTYFP, TRACTCE) %>% 
+    mutate(
+        white_male = white*proportion_male, 
+        white_female = white*proportion_female, 
+        white_unknown = case_when(is.na(gender) ~ white),
+        black_male = black*proportion_male, 
+        black_female = black*proportion_female, 
+        black_unknown = case_when(is.na(gender) ~ black),
+        latinx_male = latinx*proportion_male, 
+        latinx_female = latinx*proportion_female, 
+        latinx_unknown = case_when(is.na(gender) ~ latinx),
+        asian_male = asian*proportion_male, 
+        asian_female = asian*proportion_female, 
+        asian_unknown = case_when(is.na(gender) ~ asian),
+        other_male = other*proportion_male, 
+        other_female = other*proportion_female,
+        other_unknown = case_when(is.na(gender) ~ other)
+    ) %>% 
+    summarise(
+        tr_total = sum(white,black,latinx,asian,other, na.rm = TRUE), 
+        tr_male = sum(proportion_male, na.rm = TRUE), 
+        tr_female = sum(proportion_female, na.rm = TRUE), 
+        tr_white = sum(white, na.rm = TRUE), 
+        tr_black = sum(black, na.rm = TRUE), 
+        tr_latinx = sum(latinx, na.rm = TRUE), 
+        tr_asian = sum(asian, na.rm = TRUE), 
+        tr_other = sum(other, na.rm = TRUE),
+        tr_white_male = sum(white_male, na.rm = TRUE), 
+        tr_white_female = sum(white_female, na.rm = TRUE), 
+        tr_white_unknown = sum(white_unknown, na.rm = TRUE), 
+        tr_black_male = sum(black_male, na.rm = TRUE), 
+        tr_black_female = sum(black_female, na.rm = TRUE), 
+        tr_black_unknown = sum(black_unknown, na.rm = TRUE), 
+        tr_latinx_male = sum(latinx_male, na.rm = TRUE), 
+        tr_latinx_female = sum(latinx_female, na.rm = TRUE), 
+        tr_latinx_unknown = sum(latinx_unknown, na.rm = TRUE), 
+        tr_asian_male = sum(asian_male, na.rm = TRUE), 
+        tr_asian_female = sum(asian_female, na.rm = TRUE), 
+        tr_asian_unknown = sum(asian_unknown, na.rm = TRUE), 
+        tr_other_male = sum(other_male, na.rm = TRUE), 
+        tr_other_female = sum(other_female, na.rm = TRUE),
+        tr_other_unknown = sum(other_unknown, na.rm = TRUE))
+
+ big_sex_race_sf <- 
+ 	left_join(alameda_tracts, ind)
+```
+
+### Map these polygons
+
+```{r}
+tm_basemap(leaflet::providers$CartoDB.Positron) + 
+	# For other basemaps see: http://leaflet-extras.github.io/leaflet-providers/preview/
+	tm_shape(big_sex_race_sf, name = "Estimated Race") +
+	tm_polygons(col = c("tr_white", "tr_black","tr_latinx","tr_asian","tr_other"), 
+				alpha = .5)
+```
+
+
+```{r}
+save.image("~/git/git_tutorials/race_sex_estimates/tutorial_data.RData")
+```
