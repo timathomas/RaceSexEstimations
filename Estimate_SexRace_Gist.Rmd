@@ -1,18 +1,18 @@
 ---
-
-title: Race & Sex Estimates in R
+title: "Race & Sex Estimates in R"
+output:
+  html_document:
+    df_print: paged
 date: "`r format(Sys.time(), '%d %B, %Y')`"
-output: html_notebook
 ---
 
-This gist demonstrates how to estimate the race and sex of identified individuals using their name and location. 
+This gist demonstrates how to estimate the race and sex of identified individuals using their name and location. To estimate race, I use the packages `wru` developed by Kosuke Imai and Kabir Khanna. I highly encourage you go to their [github](https://github.com/kosukeimai/wru) and read their fantastic [paper](https://imai.fas.harvard.edu/research/files/race.pdf). To estimate sex, I use a package called `gender` developed by 
 
 ## Loading packages
 
 When installing packages, I've really been enjoying the `pacman` package lately. The `p_load` function will load your packages and install them if they are not already. 
 
 ```{r}
-
 if(!require(pacman)) install.packages("pacman")
 pacman::p_load(
 			   randomNames, # random name generator for the last example
@@ -32,20 +32,23 @@ pacman::p_load(
 The old-school method, which doesn't install the packages for you, is: 
 
 ```{r}
-library(randomNames) 
-library(readr)  
-library(ggmap) 
-library(gender) 
-library(wru) 
-library(tigris) 
-library(sf) 
+library(randomNames)
+library(readr)
+library(ggmap)
+library(gender)
+library(wru)
+library(tigris)
+library(sf)
+library(leaflet)
+library(tmap)
+library(tidycensus)
 library(tidyverse)
 ```
 
 To avoid getting a bunch of API keys for Google maps and the census, just load this file
 
 ```{r} 
-load("~/git/git_tutorials/race_sex_estimates/tutorial_data.RData")
+load("/Users/timothythomas/git/git_tutorials/race_sex_estimates/tutorial_data.RData")
 ```
 ## Example 1: Simple estimations
 
@@ -68,6 +71,8 @@ This is how your dataframe should look when you're preparing it for estimation.
 	df
 ```
 ### Geocode our data
+
+We will use Google to geocode the addresses and then do a spatial join to get which tract 
 
 ```{r}
 	# Beginning June 11, 2018, Google requires an API key. Go here to register for an API key (requires credit card but your trial should cover most geocodes)
